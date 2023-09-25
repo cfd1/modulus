@@ -12,8 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import functools
+import json
+import os
+
+import numpy as np
 import torch
-import os, json, functools, numpy as np
 
 try:
     import tensorflow.compat.v1 as tf
@@ -33,7 +37,7 @@ except:
     )
 from torch.nn import functional as F
 
-from .utils import read_vtp_file, save_json, load_json
+from .utils import save_json, load_json
 
 # Hide GPU from visible devices for TF
 tf.config.set_visible_devices([], "GPU")
@@ -68,15 +72,15 @@ class VortexSheddingDataset(DGLDataset):
     """
 
     def __init__(
-        self,
-        name="dataset",
-        data_dir=None,
-        split="train",
-        num_samples=1000,
-        num_steps=600,
-        noise_std=0.02,
-        force_reload=False,
-        verbose=False,
+            self,
+            name="dataset",
+            data_dir=None,
+            split="train",
+            num_samples=1000,
+            num_steps=600,
+            noise_std=0.02,
+            force_reload=False,
+            verbose=False,
     ):
 
         super().__init__(
@@ -207,11 +211,11 @@ class VortexSheddingDataset(DGLDataset):
         }
         for i in range(self.num_samples):
             stats["edge_mean"] += (
-                torch.mean(self.graphs[i].edata["x"], dim=0) / self.num_samples
+                    torch.mean(self.graphs[i].edata["x"], dim=0) / self.num_samples
             )
             stats["edge_meansqr"] += (
-                torch.mean(torch.square(self.graphs[i].edata["x"]), dim=0)
-                / self.num_samples
+                    torch.mean(torch.square(self.graphs[i].edata["x"]), dim=0)
+                    / self.num_samples
             )
         stats["edge_std"] = torch.sqrt(
             stats["edge_meansqr"] - torch.square(stats["edge_mean"])
@@ -224,43 +228,70 @@ class VortexSheddingDataset(DGLDataset):
 
     def _get_node_stats(self):
         stats = {
+            "velocity_min": 0,
+            "velocity_max": 0,
             "velocity_mean": 0,
             "velocity_meansqr": 0,
             "velocity_diff_mean": 0,
             "velocity_diff_meansqr": 0,
+            "pressure_min": 0,
+            "pressure_max": 0,
             "pressure_mean": 0,
             "pressure_meansqr": 0,
         }
         for i in range(self.num_samples):
+            if i == 0:
+                stats["velocity_min"] = torch.unsqueeze(torch.amin(self.node_features[i]["velocity"], dim=(1, 0)),
+                                                        dim=0)
+                stats["velocity_max"] = torch.unsqueeze(torch.amax(self.node_features[i]["velocity"], dim=(1, 0)),
+                                                        dim=0)
+                stats["pressure_min"] = torch.unsqueeze(torch.amin(self.node_targets[i]["pressure"], dim=(1, 0)),
+                                                        dim=0)
+                stats["pressure_max"] = torch.unsqueeze(torch.amax(self.node_targets[i]["pressure"], dim=(1, 0)),
+                                                        dim=0)
+            else:
+                stats["velocity_min"] = torch.unsqueeze(torch.amin(
+                    torch.cat([torch.unsqueeze(torch.amin(self.node_features[i]["velocity"], dim=(1, 0)), dim=0),
+                               stats["velocity_min"]]), dim=0), dim=0)
+                stats["velocity_max"] = torch.unsqueeze(torch.amax(
+                    torch.cat([torch.unsqueeze(torch.amax(self.node_features[i]["velocity"], dim=(1, 0)), dim=0),
+                               stats["velocity_max"]]), dim=0), dim=0)
+                stats["pressure_min"] = torch.unsqueeze(torch.amin(
+                    torch.cat([torch.unsqueeze(torch.amin(self.node_targets[i]["pressure"], dim=(1, 0)), dim=0),
+                               stats["pressure_min"]]), dim=0), dim=0)
+                stats["pressure_max"] = torch.unsqueeze(torch.amax(
+                    torch.cat([torch.unsqueeze(torch.amax(self.node_targets[i]["pressure"], dim=(1, 0)), dim=0),
+                               stats["pressure_max"]]), dim=0), dim=0)
+
             stats["velocity_mean"] += (
-                torch.mean(self.node_features[i]["velocity"], dim=(0, 1))
-                / self.num_samples
+                    torch.mean(self.node_features[i]["velocity"], dim=(0, 1))
+                    / self.num_samples
             )
             stats["velocity_meansqr"] += (
-                torch.mean(torch.square(self.node_features[i]["velocity"]), dim=(0, 1))
-                / self.num_samples
+                    torch.mean(torch.square(self.node_features[i]["velocity"]), dim=(0, 1))
+                    / self.num_samples
             )
             stats["pressure_mean"] += (
-                torch.mean(self.node_targets[i]["pressure"], dim=(0, 1))
-                / self.num_samples
+                    torch.mean(self.node_targets[i]["pressure"], dim=(0, 1))
+                    / self.num_samples
             )
             stats["pressure_meansqr"] += (
-                torch.mean(torch.square(self.node_targets[i]["pressure"]), dim=(0, 1))
-                / self.num_samples
+                    torch.mean(torch.square(self.node_targets[i]["pressure"]), dim=(0, 1))
+                    / self.num_samples
             )
             stats["velocity_diff_mean"] += (
-                torch.mean(
-                    self.node_targets[i]["velocity"],
-                    dim=(0, 1),
-                )
-                / self.num_samples
+                    torch.mean(
+                        self.node_targets[i]["velocity"],
+                        dim=(0, 1),
+                    )
+                    / self.num_samples
             )
             stats["velocity_diff_meansqr"] += (
-                torch.mean(
-                    torch.square(self.node_targets[i]["velocity"]),
-                    dim=(0, 1),
-                )
-                / self.num_samples
+                    torch.mean(
+                        torch.square(self.node_targets[i]["velocity"]),
+                        dim=(0, 1),
+                    )
+                    / self.num_samples
             )
         stats["velocity_std"] = torch.sqrt(
             stats["velocity_meansqr"] - torch.square(stats["velocity_mean"])

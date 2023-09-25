@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
-from torch import Tensor
-import torch.nn as nn
 import dgl
+import torch
+import torch.nn as nn
+from torch import Tensor
 
 try:
     from dgl import DGLGraph
@@ -112,50 +112,60 @@ class MeshGraphNet(Module):
     """
 
     def __init__(
-        self,
-        input_dim_nodes: int,
-        input_dim_edges: int,
-        output_dim: int,
-        processor_size: int = 15,
-        num_layers_node_processor: int = 2,
-        num_layers_edge_processor: int = 2,
-        hidden_dim_processor: int = 128,
-        hidden_dim_node_encoder: int = 128,
-        num_layers_node_encoder: int = 2,
-        hidden_dim_edge_encoder: int = 128,
-        num_layers_edge_encoder: int = 2,
-        hidden_dim_node_decoder: int = 128,
-        num_layers_node_decoder: int = 2,
-        aggregation: str = "sum",
-        do_concat_trick: bool = False,
-        num_processor_checkpoint_segments: int = 0,
+            self,
+            input_dim_nodes: int,
+            input_dim_edges: int,
+            output_dim: int,
+            processor_size: int = 15,
+            num_layers_node_processor: int = 2,
+            num_layers_edge_processor: int = 2,
+            hidden_dim_processor: int = 128,
+            hidden_dim_node_encoder: int = 128,
+            num_layers_node_encoder: int = 2,
+            hidden_dim_edge_encoder: int = 128,
+            num_layers_edge_encoder: int = 2,
+            hidden_dim_node_decoder: int = 128,
+            num_layers_node_decoder: int = 2,
+            aggregation: str = "sum",
+            do_concat_trick: bool = False,
+            num_processor_checkpoint_segments: int = 0,
+            activation_fn: str = "relu"
     ):
         super().__init__(meta=MetaData())
 
+        if activation_fn == "elu":
+            activation_fn = nn.ELU()
+        elif activation_fn == "relu":
+            activation_fn = nn.ReLU()
+        elif activation_fn == "silu":
+            activation_fn = nn.SiLU()
+        else:
+            raise NotImplementedError()
+
         self.edge_encoder = MeshGraphMLP(
-            input_dim_edges,
+            input_dim=input_dim_edges,
             output_dim=hidden_dim_processor,
             hidden_dim=hidden_dim_edge_encoder,
             hidden_layers=num_layers_edge_encoder,
-            activation_fn=nn.ReLU(),
+            activation_fn=activation_fn,
             norm_type="LayerNorm",
             recompute_activation=False,
         )
         self.node_encoder = MeshGraphMLP(
-            input_dim_nodes,
+            input_dim=input_dim_nodes,
             output_dim=hidden_dim_processor,
             hidden_dim=hidden_dim_node_encoder,
             hidden_layers=num_layers_node_encoder,
-            activation_fn=nn.ReLU(),
+            activation_fn=activation_fn,
             norm_type="LayerNorm",
             recompute_activation=False,
         )
         self.node_decoder = MeshGraphMLP(
-            hidden_dim_processor,
+            input_dim=hidden_dim_processor,
             output_dim=output_dim,
             hidden_dim=hidden_dim_node_decoder,
             hidden_layers=num_layers_node_decoder,
-            activation_fn=nn.ReLU(),
+            activation_fn=activation_fn,
             norm_type=None,
             recompute_activation=False,
         )
@@ -167,16 +177,16 @@ class MeshGraphNet(Module):
             num_layers_edge=num_layers_edge_processor,
             aggregation=aggregation,
             norm_type="LayerNorm",
-            activation_fn=nn.ReLU(),
+            activation_fn=activation_fn,
             do_concat_trick=do_concat_trick,
             num_processor_checkpoint_segments=num_processor_checkpoint_segments,
         )
 
     def forward(
-        self,
-        node_features: Tensor,
-        edge_features: Tensor,
-        graph: Union[DGLGraph, List[DGLGraph]],
+            self,
+            node_features: Tensor,
+            edge_features: Tensor,
+            graph: Union[DGLGraph, List[DGLGraph]],
     ) -> Tensor:
         edge_features = self.edge_encoder(edge_features)
         node_features = self.node_encoder(node_features)
@@ -189,17 +199,17 @@ class MeshGraphNetProcessor(nn.Module):
     """MeshGraphNet processor block"""
 
     def __init__(
-        self,
-        processor_size: int = 15,
-        input_dim_node: int = 128,
-        input_dim_edge: int = 128,
-        num_layers_node: int = 2,
-        num_layers_edge: int = 2,
-        aggregation: str = "sum",
-        norm_type: str = "LayerNorm",
-        activation_fn: nn.Module = nn.ReLU(),
-        do_concat_trick: bool = False,
-        num_processor_checkpoint_segments: int = 0,
+            self,
+            processor_size: int = 15,
+            input_dim_node: int = 128,
+            input_dim_edge: int = 128,
+            num_layers_node: int = 2,
+            num_layers_edge: int = 2,
+            aggregation: str = "sum",
+            norm_type: str = "LayerNorm",
+            activation_fn: nn.Module = nn.ReLU(),
+            do_concat_trick: bool = False,
+            num_processor_checkpoint_segments: int = 0,
     ):
         super().__init__()
         self.processor_size = processor_size
@@ -276,7 +286,7 @@ class MeshGraphNetProcessor(nn.Module):
             self.checkpoint_segments = [(0, self.num_processor_layers)]
 
     def run_function(
-        self, segment_start: int, segment_end: int
+            self, segment_start: int, segment_end: int
     ) -> Callable[
         [Tensor, Tensor, Union[DGLGraph, List[DGLGraph]]], Tuple[Tensor, Tensor]
     ]:
@@ -297,9 +307,9 @@ class MeshGraphNetProcessor(nn.Module):
         segment = self.processor_layers[segment_start:segment_end]
 
         def custom_forward(
-            node_features: Tensor,
-            edge_features: Tensor,
-            graph: Union[DGLGraph, List[DGLGraph]],
+                node_features: Tensor,
+                edge_features: Tensor,
+                graph: Union[DGLGraph, List[DGLGraph]],
         ) -> Tuple[Tensor, Tensor]:
             """Custom forward function"""
             for module in segment:
@@ -312,10 +322,10 @@ class MeshGraphNetProcessor(nn.Module):
 
     @torch.jit.unused
     def forward(
-        self,
-        node_features: Tensor,
-        edge_features: Tensor,
-        graph: Union[DGLGraph, List[DGLGraph], CuGraphCSC],
+            self,
+            node_features: Tensor,
+            edge_features: Tensor,
+            graph: Union[DGLGraph, List[DGLGraph], CuGraphCSC],
     ) -> Tensor:
         for segment_start, segment_end in self.checkpoint_segments:
             edge_features, node_features = self.checkpoint_fn(
